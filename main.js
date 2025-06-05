@@ -58,16 +58,24 @@ function init() {
 
 function startCamera() {
   console.log('开始启动摄像头...');
+  console.log('用户代理:', navigator.userAgent);
+  console.log('是否支持getUserMedia:', !!navigator.mediaDevices?.getUserMedia);
   
-  // 更强制的后置摄像头设置
+  // iPhone Safari 特殊处理
+  const isiPhone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  console.log('是否为iPhone:', isiPhone);
+  
+  // 简化的约束，iPhone Safari 更兼容
   const constraints = {
     video: { 
-      facingMode: { exact: "environment" }, // 强制要求后置摄像头
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
+      facingMode: "environment",
+      width: { ideal: 640, max: 1280 },
+      height: { ideal: 480, max: 720 }
     }, 
     audio: true 
   };
+
+  console.log('使用约束:', constraints);
 
   navigator.mediaDevices.getUserMedia(constraints)
     .then(stream => {
@@ -89,8 +97,26 @@ function startCamera() {
       }
     })
     .catch(err => {
-      console.log("普通模式也失败，尝试任意摄像头", err);
-      // 最后尝试任意摄像头
+      console.log("普通模式也失败，尝试前置摄像头", err);
+      // iPhone 有时前置摄像头更稳定
+      return navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }, 
+        audio: true 
+      });
+    })
+    .then(stream => {
+      if (stream) {
+        console.log('前置摄像头成功');
+        handleStream(stream);
+      }
+    })
+    .catch(err => {
+      console.log("前置摄像头也失败，尝试最基本模式", err);
+      // 最简单的约束
       return navigator.mediaDevices.getUserMedia({ 
         video: true, 
         audio: true 
@@ -144,31 +170,65 @@ function showError(message) {
 
 function handleStream(stream) {
   console.log('处理摄像头流...');
+  console.log('流轨道:', stream.getTracks().map(track => ({
+    kind: track.kind,
+    label: track.label,
+    enabled: track.enabled,
+    readyState: track.readyState
+  })));
+  
   video = document.createElement("video");
-  video.setAttribute("playsinline", "");
+  video.setAttribute("playsinline", ""); // iPhone 必需
   video.setAttribute("autoplay", "");
   video.setAttribute("muted", "");
+  video.setAttribute("webkit-playsinline", ""); // 老版本 iPhone
   video.muted = true;
+  video.playsInline = true; // 确保内联播放
   video.srcObject = stream;
 
+  // 更详细的视频事件监听
+  video.onloadstart = () => console.log('视频开始加载');
+  video.onloadedmetadata = () => {
+    console.log('视频元数据加载完成');
+    console.log('视频尺寸:', video.videoWidth, 'x', video.videoHeight);
+  };
   video.onloadeddata = () => {
     console.log('视频数据加载完成');
-    videoTexture = new THREE.VideoTexture(video);
-    videoTexture.minFilter = THREE.LinearFilter;
-    videoTexture.magFilter = THREE.LinearFilter;
-    scene.background = videoTexture;
+    console.log('创建视频纹理...');
+    try {
+      videoTexture = new THREE.VideoTexture(video);
+      videoTexture.minFilter = THREE.LinearFilter;
+      videoTexture.magFilter = THREE.LinearFilter;
+      videoTexture.format = THREE.RGBFormat;
+      scene.background = videoTexture;
+      console.log('视频纹理设置成功');
+      showSuccess("摄像头成功启动！");
+    } catch (textureError) {
+      console.error('视频纹理创建失败:', textureError);
+      scene.background = new THREE.Color(0x000000);
+      showError("视频纹理失败，使用黑色背景");
+    }
   };
+  video.oncanplay = () => console.log('视频可以播放');
+  video.onplay = () => console.log('视频开始播放');
+  video.onplaying = () => console.log('视频正在播放');
 
   video.onerror = (e) => {
     console.error('视频播放错误:', e);
-    showError("视频播放失败");
+    console.error('错误详情:', video.error);
+    showError("视频播放失败: " + (video.error?.message || '未知错误'));
   };
 
-  video.play().then(() => {
-    console.log('视频开始播放');
-  }).catch(e => {
-    console.error('视频播放失败:', e);
-  });
+  // 强制播放
+  const playPromise = video.play();
+  if (playPromise !== undefined) {
+    playPromise.then(() => {
+      console.log('视频播放成功');
+    }).catch(e => {
+      console.error('视频播放promise失败:', e);
+      showError("视频播放失败: " + e.message);
+    });
+  }
 
   // 音频处理
   try {
