@@ -57,6 +57,8 @@ function init() {
 }
 
 function startCamera() {
+  console.log('开始启动摄像头...');
+  
   // 更强制的后置摄像头设置
   const constraints = {
     video: { 
@@ -69,10 +71,11 @@ function startCamera() {
 
   navigator.mediaDevices.getUserMedia(constraints)
     .then(stream => {
+      console.log('强制后置摄像头成功');
       handleStream(stream);
     })
     .catch(err => {
-      console.log("强制后置摄像头失败，尝试普通模式");
+      console.log("强制后置摄像头失败，尝试普通模式", err);
       // 如果强制后置失败，降级到普通模式
       return navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: "environment" }, 
@@ -80,17 +83,86 @@ function startCamera() {
       });
     })
     .then(stream => {
+      if (stream) {
+        console.log('普通模式摄像头成功');
+        handleStream(stream);
+      }
+    })
+    .catch(err => {
+      console.log("普通模式也失败，尝试任意摄像头", err);
+      // 最后尝试任意摄像头
+      return navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+    })
+    .then(stream => {
+      if (stream) {
+        console.log('任意摄像头成功');
+        handleStream(stream);
+      }
+    })
+    .then(stream => {
       handleStream(stream);
     })
     .catch(err => {
-      console.error("摄像头/麦克风访问失败:", err);
-      // 备选方案：使用天空背景
-      scene.background = new THREE.Color(0x87CEEB);
+      console.error("所有摄像头模式都失败:", err);
+      showError("摄像头访问失败，使用模拟背景");
+      // 备选方案：使用渐变背景
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      
+      // 创建天空渐变背景
+      const gradient = ctx.createLinearGradient(0, 0, 0, 480);
+      gradient.addColorStop(0, '#87CEEB'); // 天空蓝
+      gradient.addColorStop(1, '#E0F6FF'); // 浅蓝
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 640, 480);
+      
+      // 添加一些云朵
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.beginPath();
+      ctx.arc(100, 100, 30, 0, Math.PI * 2);
+      ctx.arc(130, 90, 25, 0, Math.PI * 2);
+      ctx.arc(160, 100, 35, 0, Math.PI * 2);
+      ctx.fill();
+      
+      const canvasTexture = new THREE.CanvasTexture(canvas);
+      scene.background = canvasTexture;
       isStarted = true;
     });
 }
 
+function showError(message) {
+  const errorDiv = document.createElement('div');
+  errorDiv.textContent = message;
+  errorDiv.style.cssText = `
+    position: absolute;
+    top: 80px;
+    left: 20px;
+    right: 20px;
+    background: rgba(255, 0, 0, 0.8);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    z-index: 1000;
+    font-size: 16px;
+    text-align: center;
+  `;
+  document.body.appendChild(errorDiv);
+  
+  // 5秒后移除错误信息
+  setTimeout(() => {
+    if (errorDiv.parentNode) {
+      errorDiv.parentNode.removeChild(errorDiv);
+    }
+  }, 5000);
+}
+
 function handleStream(stream) {
+  console.log('处理摄像头流...');
   video = document.createElement("video");
   video.setAttribute("playsinline", "");
   video.setAttribute("autoplay", "");
@@ -99,21 +171,72 @@ function handleStream(stream) {
   video.srcObject = stream;
 
   video.onloadeddata = () => {
+    console.log('视频数据加载完成');
     videoTexture = new THREE.VideoTexture(video);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
     scene.background = videoTexture;
+    showSuccess("摄像头启动成功！");
   };
 
-  video.play();
+  video.onerror = (e) => {
+    console.error('视频播放错误:', e);
+    showError("视频播放失败");
+  };
+
+  video.play().then(() => {
+    console.log('视频开始播放');
+  }).catch(e => {
+    console.error('视频播放失败:', e);
+  });
 
   // 音频处理
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const mic = audioContext.createMediaStreamSource(stream);
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 256;
-  mic.connect(analyser);
-  audioData = new Uint8Array(analyser.frequencyBinCount);
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const mic = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    mic.connect(analyser);
+    audioData = new Uint8Array(analyser.frequencyBinCount);
+    console.log('音频设置完成');
+  } catch (audioError) {
+    console.error('音频设置失败:', audioError);
+    showError("音频功能不可用，但可以点击屏幕创建气球");
+    // 添加点击创建气球的功能
+    renderer.domElement.addEventListener('click', () => {
+      if (balloons.length < 15) {
+        addBalloon();
+      }
+    });
+  }
   
   isStarted = true;
+}
+
+function showSuccess(message) {
+  const successDiv = document.createElement('div');
+  successDiv.textContent = message;
+  successDiv.style.cssText = `
+    position: absolute;
+    top: 80px;
+    left: 20px;
+    right: 20px;
+    background: rgba(0, 255, 0, 0.8);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    z-index: 1000;
+    font-size: 16px;
+    text-align: center;
+  `;
+  document.body.appendChild(successDiv);
+  
+  // 3秒后移除成功信息
+  setTimeout(() => {
+    if (successDiv.parentNode) {
+      successDiv.parentNode.removeChild(successDiv);
+    }
+  }, 3000);
 }
 
 function onWindowResize() {
