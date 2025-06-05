@@ -107,30 +107,11 @@ function startCamera() {
     })
     .catch(err => {
       console.error("所有摄像头模式都失败:", err);
-      showError("摄像头访问失败，使用模拟背景");
-      // 备选方案：使用渐变背景
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext('2d');
-      
-      // 创建天空渐变背景
-      const gradient = ctx.createLinearGradient(0, 0, 0, 480);
-      gradient.addColorStop(0, '#87CEEB'); // 天空蓝
-      gradient.addColorStop(1, '#E0F6FF'); // 浅蓝
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 640, 480);
-      
-      // 添加一些云朵
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.beginPath();
-      ctx.arc(100, 100, 30, 0, Math.PI * 2);
-      ctx.arc(130, 90, 25, 0, Math.PI * 2);
-      ctx.arc(160, 100, 35, 0, Math.PI * 2);
-      ctx.fill();
-      
-      const canvasTexture = new THREE.CanvasTexture(canvas);
-      scene.background = canvasTexture;
+      showError("摄像头访问失败，点击屏幕可以创建气球");
+      // 备选方案：使用纯黑色背景
+      scene.background = new THREE.Color(0x000000);
+      // 即使没有摄像头也可以点击创建气球
+      addClickListener();
       isStarted = true;
     });
 }
@@ -176,7 +157,6 @@ function handleStream(stream) {
     videoTexture.minFilter = THREE.LinearFilter;
     videoTexture.magFilter = THREE.LinearFilter;
     scene.background = videoTexture;
-    showSuccess("摄像头启动成功！");
   };
 
   video.onerror = (e) => {
@@ -192,25 +172,53 @@ function handleStream(stream) {
 
   // 音频处理
   try {
+    console.log('开始设置音频...');
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // iPhone需要用户交互后才能启动音频上下文
+    if (audioContext.state === 'suspended') {
+      console.log('音频上下文被暂停，尝试恢复...');
+      audioContext.resume().then(() => {
+        console.log('音频上下文恢复成功');
+      });
+    }
+    
     const mic = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
     mic.connect(analyser);
     audioData = new Uint8Array(analyser.frequencyBinCount);
     console.log('音频设置完成');
+    
+    showSuccess("摄像头和音频启动成功！对着麦克风说话释放气球");
   } catch (audioError) {
     console.error('音频设置失败:', audioError);
-    showError("音频功能不可用，但可以点击屏幕创建气球");
+    showError("音频功能不可用，点击屏幕也可以创建气球");
     // 添加点击创建气球的功能
-    renderer.domElement.addEventListener('click', () => {
-      if (balloons.length < 15) {
-        addBalloon();
-      }
-    });
+    addClickListener();
   }
   
   isStarted = true;
+}
+
+function addClickListener() {
+  // 点击屏幕创建气球的备用功能
+  renderer.domElement.addEventListener('click', () => {
+    if (balloons.length < 15) {
+      console.log('点击创建气球');
+      addBalloon();
+    }
+  });
+  
+  renderer.domElement.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // 防止双重触发
+    if (balloons.length < 15) {
+      console.log('触摸创建气球');
+      addBalloon();
+    }
+  });
+}
 }
 
 function showSuccess(message) {
