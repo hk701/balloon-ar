@@ -264,7 +264,7 @@ function handleStream(stream) {
 
 function addClickListener() {
   // 点击屏幕创建气球的备用功能
-  renderer.domElement.addEventListener('click', () => {
+  er.domElement.addEventListener('click', () => {
     if (balloons.length < 15) {
       console.log('点击创建气球');
       addBalloon();
@@ -279,7 +279,7 @@ function addClickListener() {
     }
   });
 }
-}
+
 
 function showSuccess(message) {
   const successDiv = document.createElement('div');
