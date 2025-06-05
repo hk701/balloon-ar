@@ -194,7 +194,9 @@ function animate() {
   if (isStarted && analyser) {
     analyser.getByteFrequencyData(audioData);
     const volume = audioData.reduce((a, b) => a + b, 0) / audioData.length;
-    if (volume > 60 && balloons.length < 20) { // 限制气球数量
+    console.log('音量:', volume); // 调试音量检测
+    if (volume > 40 && balloons.length < 15) { // 降低触发阈值，限制气球数量
+      console.log('创建新气球'); // 调试气球创建
       addBalloon();
     }
   }
